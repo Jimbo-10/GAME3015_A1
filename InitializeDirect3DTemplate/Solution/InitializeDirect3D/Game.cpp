@@ -20,7 +20,7 @@ bool Game::Initialize()
 		return false;
 
 
-	mCamera.SetPosition(0, 5, 0);
+	mCamera.SetPosition(0, 20, 0);
 	mCamera.Pitch(3.14 / 2);
 
 	// Reset the command list to prep for initialization commands.
@@ -32,6 +32,7 @@ bool Game::Initialize()
 
 	LoadTextures();
 	BuildRootSignature();
+	ProcessEvents();
 	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
 	BuildShapeGeometry();
@@ -65,6 +66,7 @@ void Game::OnResize()
 void Game::Update(const GameTimer& gt)
 {
 	OnKeyboardInput(gt);
+	ProcessEvents();
 	mWorld.update(gt);
 	//UpdateCamera(gt);
 
@@ -189,7 +191,7 @@ void Game::OnMouseMove(WPARAM btnState, int x, int y)
 
 void Game::OnKeyboardInput(const GameTimer& gt)
 {
-	const float dt = gt.DeltaTime();
+	/*const float dt = gt.DeltaTime();
 
 	mCamera.GetLook();
 	float tmin = 0;
@@ -234,7 +236,7 @@ void Game::OnKeyboardInput(const GameTimer& gt)
 		{
 			mCamera.Strafe(10.0f * dt);
 		}
-	}
+	}*/
 
 
 	mCamera.UpdateViewMatrix();
@@ -395,6 +397,33 @@ void Game::LoadTextures()
 
 	mTextures[HillTex->Name] = std::move(HillTex);
 }
+
+void Game::ProcessEvents()
+{
+	CommandQueue& commands = mWorld.getCommandQueue();
+	
+	MSG msg = { 0 };
+
+	// Process all pending Windows messages
+	while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+	{
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+
+		// Handle window close
+		if (msg.message == WM_QUIT)
+		{
+			mWindowRunning = false;
+		}
+
+		// Forward input events to player
+		//mPlayer.handleEvent(msg.message, msg.wParam, commands);
+	}
+
+	// Realtime input (movement, held keys)
+	mPlayer.handleRealtimeInput(commands);
+}
+
 
 void Game::BuildRootSignature()
 {

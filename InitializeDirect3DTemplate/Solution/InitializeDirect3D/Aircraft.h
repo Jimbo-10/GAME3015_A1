@@ -20,7 +20,7 @@ public:
 private:
 	virtual void		drawCurrent() const;
 	virtual void		buildCurrent();
-
+	virtual unsigned int	getCategory() const;
 
 private:
 	Type				mType;

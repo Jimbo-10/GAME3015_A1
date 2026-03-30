@@ -25,6 +25,19 @@ void Boulder::drawCurrent() const
 
 }
 
+unsigned int Boulder::getCategory() const
+{
+	/*switch (mType)
+	{
+	case Brick:
+		return Category::PlayerAircraft;
+
+	default:
+		return Category::EnemyAircraft;
+	}*/
+	return Category::PlayerAircraft;
+}
+
 void Boulder::buildCurrent()
 {
 	auto render = std::make_unique<RenderItem>();

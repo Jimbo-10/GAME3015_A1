@@ -2,6 +2,7 @@
 #include "SceneNode.h"
 #include "Aircraft.h"
 #include "SpriteNode.h"
+#include "CommandQueue.h"
 
 class World
 {
@@ -9,7 +10,8 @@ public:
 	explicit							World(Game* window);
 	void								update(const GameTimer& gt);
 	void								draw();
-
+	CommandQueue&						getCommandQueue();
+	CommandQueue						mCommandQueue;
 	//void								loadTextures();
 	void								buildScene();
 

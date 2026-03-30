@@ -1,5 +1,7 @@
 #include "SceneNode.h"
 #include "Game.h"
+#include "Comand.h"
+#include <iostream>
 
 SceneNode::SceneNode(Game* game)
 	: mChildren()
@@ -147,4 +149,24 @@ void SceneNode::move(float x, float y, float z)
 	mWorldPosition.x += x;
 	mWorldPosition.y += y;
 	mWorldPosition.z += z;
+
+	OutputDebugStringA("MOVE\n");
+}
+
+void SceneNode::onCommand(const Comand& command, Time dt)
+{
+	// Command current node, if category matches
+	if (command.category & getCategory())
+		command.action(*this, dt);
+
+	// Command children
+	for (Ptr& child : mChildren)
+		child->onCommand(command, dt);
+
+	std::cout << "COMMAND EXECUTED\n";
+}
+
+unsigned int SceneNode::getCategory() const
+{
+	return Category::None;
 }

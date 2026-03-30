@@ -1,10 +1,10 @@
 #include "Entity.h"
-
-Entity::Entity(Game* game) : SceneNode(game), mVelocity(0, 0)
+#include <iostream>
+Entity::Entity(Game* game) : SceneNode(game), mVelocity(0, 0, 0)
 {
 }
 
-void Entity::setVelocity(XMFLOAT2 velocity)
+void Entity::setVelocity(XMFLOAT3 velocity)
 {
 	mVelocity = velocity;
 }
@@ -15,19 +15,38 @@ void Entity::setVelocity(float vx, float vy)
 	mVelocity.y = vy;
 }
 
-XMFLOAT2 Entity::getVelocity() const
+XMFLOAT3 Entity::getVelocity() const
 {
 	return mVelocity;
+	std::cout << mVelocity.x << "\n";
 }
 
 void Entity::updateCurrent(const GameTimer& gt)
 {
-	XMFLOAT2 mV;
-	mV.x = mVelocity.x * gt.DeltaTime();
-	mV.y = mVelocity.y * gt.DeltaTime();
+	float dt = gt.DeltaTime();
+	move(mVelocity.x * dt, mVelocity.y * dt, mVelocity.z * dt);
 
-	move(mV.x, mV.y, 0);
+	mVelocity = { 0.0f, 0.0f, 0.0f };
 
-	renderer->World = getWorldTransform();
+	XMFLOAT4X4 world = getWorldTransform();
+	XMStoreFloat4x4(&renderer->World, XMLoadFloat4x4(&world));
+
 	renderer->NumFramesDirty++;
+
+	OutputDebugStringA("UPDATE\n");
+}
+
+void Entity::accelerate(const XMFLOAT3& v)
+{
+	mVelocity.x += v.x;
+	mVelocity.y += v.y;
+	mVelocity.z += v.z;
+
+	OutputDebugStringA("ACCELERATE\n");
+}
+
+void Entity::accelerate(float vx, float vy)
+{
+	mVelocity.x += vx;
+	mVelocity.y += vy;
 }

@@ -9,6 +9,7 @@
 using Microsoft::WRL::ComPtr;
 using namespace DirectX;
 using namespace DirectX::PackedVector;
+using Time = float;
 
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "D3D12.lib")
@@ -48,6 +49,7 @@ struct RenderItem
 };
 
 class Game;
+struct Comand;
 
 class SceneNode
 {
@@ -74,6 +76,9 @@ public:
 
 	XMFLOAT4X4				getWorldTransform() const;
 	XMFLOAT4X4				getTransform() const;
+
+	void					onCommand(const Comand& command, Time dt);
+	virtual unsigned int	getCategory() const;
 
 	void					move(float x, float y, float z);
 private:

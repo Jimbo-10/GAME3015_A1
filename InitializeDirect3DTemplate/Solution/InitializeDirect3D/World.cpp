@@ -1,4 +1,5 @@
 #include "World.h"
+#include <iostream>
 
 World::World(Game* game)
 	: mSceneGraph(new SceneNode(game))
@@ -11,8 +12,19 @@ World::World(Game* game)
 {
 }
 
+CommandQueue& World::getCommandQueue()
+{
+	return mCommandQueue;
+}
+
 void World::update(const GameTimer& gt)
 {
+	std::cout << "WORLD UPDATE\n";
+	float dt = gt.DeltaTime();
+
+	while (!mCommandQueue.isEmpty())
+		mSceneGraph->onCommand(mCommandQueue.pop(), dt);
+	std::cout << "update\n";
 	mSceneGraph->update(gt);
 }
 
@@ -31,7 +43,7 @@ void World::buildScene()
 	//mPlayerAircraft->setVelocity(mScrollSpeed, 0.0, 0.0);
 	mSceneGraph->attachChild(std::move(player));
 
-	std::unique_ptr<Boulder> boulder(new Boulder(Boulder::Stone, mGame));
+	std::unique_ptr<Boulder> boulder(new Boulder(Boulder::Brick, mGame));
 	auto globe = boulder.get();
 	globe->setPosition(2, 0, 1);
 	globe->setScale(1.0, 1.0, 1.0);

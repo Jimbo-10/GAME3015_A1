@@ -1,5 +1,6 @@
 #pragma once
 #include "World.h"
+#include "Player.h"
 
 class Game : public D3DApp
 {
@@ -30,7 +31,7 @@ private:
 	void LoadTextures();
 
 	void BuildRootSignature();
-
+	void ProcessEvents();
 	//step9
 	void BuildDescriptorHeaps();
 
@@ -92,6 +93,8 @@ private:
 	POINT mLastMousePos;
 	Camera mCamera;
 	World mWorld;
+	Player mPlayer;
+	bool mWindowRunning = true;
 
 public:
 	std::vector<std::unique_ptr<RenderItem>>& getRenderItems() { return mAllRitems; }
