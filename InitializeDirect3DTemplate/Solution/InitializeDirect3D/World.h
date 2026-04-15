@@ -13,7 +13,8 @@ public:
 	CommandQueue&						getCommandQueue();
 	CommandQueue						mCommandQueue;
 	//void								loadTextures();
-	void								buildScene();
+	void								buildGameScene();
+	//void								buildTitleScene();
 
 
 private:

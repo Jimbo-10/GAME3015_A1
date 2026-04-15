@@ -2,7 +2,7 @@
 // NormalMapApp.cpp 
 //***************************************************************************************
 
-#include "Game.h"
+#include "Application.h"
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
     PSTR cmdLine, int showCmd)

@@ -9,6 +9,7 @@ public:
 
 private:
 	virtual void		drawCurrent() const;
-	virtual void		buildCurrent();
+	virtual void		buildCurrent() override;
+
 };
 

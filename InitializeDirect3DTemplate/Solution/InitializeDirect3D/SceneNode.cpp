@@ -1,5 +1,5 @@
 #include "SceneNode.h"
-#include "Game.h"
+#include "Application.h"
 #include "Comand.h"
 #include <iostream>
 
@@ -70,8 +70,11 @@ void SceneNode::drawChildren() const
 
 void SceneNode::build()
 {
+	OutputDebugStringA("SCENENODE BUILD\n");
 	buildCurrent();
-	buildChildren();
+	//buildChildren();
+	for (const Ptr& child : mChildren)
+		child->build();
 }
 
 void SceneNode::buildCurrent()

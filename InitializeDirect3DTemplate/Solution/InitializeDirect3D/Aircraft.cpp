@@ -1,5 +1,5 @@
 #include "Aircraft.h"
-#include "Game.h"
+#include "Application.h"
 
 Boulder::Boulder(Type type, Game* game) : Entity(game)
 , mType(type)
@@ -42,7 +42,7 @@ void Boulder::buildCurrent()
 {
 	auto render = std::make_unique<RenderItem>();
 	renderer = render.get();
-	renderer->World = getTransform();
+	renderer->World = getWorldTransform(); //getTransform();
 	XMStoreFloat4x4(&renderer->World, XMMatrixScaling(10.0f, 1.0f, 10.0f));
 	renderer->ObjCBIndex = game->getRenderItems().size();
 	renderer->Mat = game->getMaterials()[mSprite].get();
@@ -51,6 +51,8 @@ void Boulder::buildCurrent()
 	renderer->IndexCount = renderer->Geo->DrawArgs["sphere"].IndexCount;
 	renderer->StartIndexLocation = renderer->Geo->DrawArgs["sphere"].StartIndexLocation;
 	renderer->BaseVertexLocation = renderer->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	renderer->NumFramesDirty = 3;
 
 	game->getRenderItems().push_back(std::move(render));
 }

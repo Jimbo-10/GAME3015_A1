@@ -26,12 +26,13 @@ void Entity::updateCurrent(const GameTimer& gt)
 	float dt = gt.DeltaTime();
 	move(mVelocity.x * dt, mVelocity.y * dt, mVelocity.z * dt);
 
+	// reset the velocity
 	mVelocity = { 0.0f, 0.0f, 0.0f };
 
 	XMFLOAT4X4 world = getWorldTransform();
 	XMStoreFloat4x4(&renderer->World, XMLoadFloat4x4(&world));
 
-	renderer->NumFramesDirty++;
+	renderer->NumFramesDirty = 3;
 
 	OutputDebugStringA("UPDATE\n");
 }

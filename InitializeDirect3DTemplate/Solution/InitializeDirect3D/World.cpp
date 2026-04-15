@@ -1,5 +1,6 @@
 #include "World.h"
 #include <iostream>
+#include "Application.h"
 
 World::World(Game* game)
 	: mSceneGraph(new SceneNode(game))
@@ -33,14 +34,15 @@ void World::draw()
 	mSceneGraph->draw();
 }
 
-void World::buildScene()
+void World::buildGameScene()
 {
+   
 	std::unique_ptr<Boulder> player(new Boulder(Boulder::Brick, mGame));
 	mPlayerAircraft = player.get();
 	mPlayerAircraft->setPosition(0, 2, 0.0);
 	mPlayerAircraft->setScale(1.5, 1.5, 1.5);
-	mPlayerAircraft->setWorldRotation(0, XM_PI *2, 0);
-	//mPlayerAircraft->setVelocity(mScrollSpeed, 0.0, 0.0);
+	mPlayerAircraft->setWorldRotation(0, XM_PI * 2, 0);
+
 	mSceneGraph->attachChild(std::move(player));
 
 	std::unique_ptr<Boulder> boulder(new Boulder(Boulder::Brick, mGame));
@@ -48,17 +50,16 @@ void World::buildScene()
 	globe->setPosition(2, 0, 1);
 	globe->setScale(1.0, 1.0, 1.0);
 	globe->setWorldRotation(0, 0, 0);
-	mPlayerAircraft->attachChild(std::move(boulder));
 
+	mPlayerAircraft->attachChild(std::move(boulder));
+	
 	std::unique_ptr<SpriteNode> backgroundSprite(new SpriteNode(mGame));
 	mBackground = backgroundSprite.get();
-	//mBackground->setPosition(mWorldBounds.left, mWorldBounds.top);
-	mBackground->setPosition(0, 0, 0.0);
-	//mBackground->setScale(10.0, 1.0, 200.0);
+	mBackground->setPosition(0, 2.0, 0.0);
 	mBackground->setScale(1.0, 1.0, 1.0);
-	//mBackground->setVelocity(0, 0, -mScrollSpeed);
-	mSceneGraph->attachChild(std::move(backgroundSprite));
-	
 
+
+	mSceneGraph->attachChild(std::move(backgroundSprite));
+	OutputDebugStringA("CALLING SCENEGRAPH BUILD\n");
 	mSceneGraph->build();
 }

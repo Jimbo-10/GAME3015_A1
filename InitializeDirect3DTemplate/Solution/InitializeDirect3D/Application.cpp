@@ -1,10 +1,17 @@
-#include "Game.h"
+#include "Application.h"
+#include <d3d11.h>
+#include <Windows.h>
 
 const int gNumFrameResources = 3;
+
+
 
 Game::Game(HINSTANCE hInstance)
 	: D3DApp(hInstance)
 	, mWorld(this)
+	, mPlayer()
+	, mContext(this, &mPlayer)
+	
 {
 }
 
@@ -19,10 +26,26 @@ bool Game::Initialize()
 	if (!D3DApp::Initialize())
 		return false;
 
+	/*mCamera.SetPosition(0, 5, -15);
+	mCamera.Pitch(3.14 / 2);*/
 
-	mCamera.SetPosition(0, 20, 0);
-	mCamera.Pitch(3.14 / 2);
+	mCamera.SetPosition(0.0f, 0.0f, -15.0f);
+	mCamera.LookAt(
+		XMFLOAT3(0.0f, 5.0f, -15.0f),
+		XMFLOAT3(0.0f, 0.0f, 0.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f)
+	);
 
+	/*mCamera.SetPosition(0.0f, 0.0f, -15.0f);
+
+	mCamera.SetPosition(0.0f, 0.0f, -15.0f);
+	mCamera.LookAt(
+		mCamera.GetPosition3f(),
+		XMFLOAT3(0.0f, 0.0f, 0.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f)
+	);*/
+
+	mCamera.UpdateViewMatrix();
 	// Reset the command list to prep for initialization commands.
 	ThrowIfFailed(mCommandList->Reset(mDirectCmdListAlloc.Get(), nullptr));
 
@@ -32,7 +55,6 @@ bool Game::Initialize()
 
 	LoadTextures();
 	BuildRootSignature();
-	ProcessEvents();
 	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
 	BuildShapeGeometry();
@@ -48,6 +70,10 @@ bool Game::Initialize()
 
 	// Wait until initialization is complete.
 	FlushCommandQueue();
+
+	mStateStack = std::make_unique<StateStack>(mContext);
+	RegisterStates();
+	mStateStack->pushState(States::Title);
 
 	return true;
 }
@@ -65,14 +91,50 @@ void Game::OnResize()
 
 void Game::Update(const GameTimer& gt)
 {
-	OnKeyboardInput(gt);
 	ProcessEvents();
-	mWorld.update(gt);
-	//UpdateCamera(gt);
+	OnKeyboardInput(gt);
+	//
+	//mWorld.update(gt);
 
-	// Cycle through the circular frame resource array.
-	mCurrFrameResourceIndex = (mCurrFrameResourceIndex + 1) % gNumFrameResources;
-	mCurrFrameResource = mFrameResources[mCurrFrameResourceIndex].get();
+	if (!mWindowRunning)
+		return;
+
+	if (mStateStack)
+		mStateStack->update(gt);
+	
+	if (mNeedRebuild)
+	{
+
+
+		WaitForGPU();
+
+		mFrameResources.clear();
+		BuildFrameResources();
+
+		mCurrFrameResourceIndex = 0;
+		mCurrFrameResource = mFrameResources[0].get();
+
+		for (auto& e : mAllRitems)
+		{
+			e->NumFramesDirty = gNumFrameResources;
+		}
+
+		for (auto& m : mMaterials)
+		{
+			m.second->NumFramesDirty = gNumFrameResources;
+		}
+		
+		FlushCommandQueue();
+
+		mNeedRebuild = false;
+		
+	}
+	else
+	{
+		// Only cycle if NOT rebuilding
+		mCurrFrameResourceIndex = (mCurrFrameResourceIndex + 1) % gNumFrameResources;
+		mCurrFrameResource = mFrameResources[mCurrFrameResourceIndex].get();
+	}
 
 	// Has the GPU finished processing the commands of the current frame resource?
 	// If not, wait until the GPU has completed commands up to this fence point.
@@ -133,8 +195,18 @@ void Game::Draw(const GameTimer& gt)
 	auto passCB = mCurrFrameResource->PassCB->Resource();
 	mCommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
 
-	mWorld.draw();
-	DrawRenderItems(mCommandList.Get(), mOpaqueRitems);
+
+	
+	OutputDebugStringA(("RenderItems count: " + std::to_string(mOpaqueRitems.size()) + "\n").c_str());
+	// Let state decide what to draw
+	if (mStateStack)
+		mStateStack->draw();
+	OutputDebugStringA(("DRAWING: " + std::to_string(getOpaqueRenderItems().size()) + "\n").c_str());
+	//DrawRenderItems(mCommandList.Get(), mOpaqueRitems);
+	DrawRenderItems(mCommandList.Get(), getOpaqueRenderItems());
+
+	// Draw world (depends on mIsTitle internally)
+	//mWorld.draw();
 
 	// Indicate a state transition on the resource usage.
 	auto transition2 = CD3DX12_RESOURCE_BARRIER::Transition(CurrentBackBuffer(),
@@ -159,6 +231,7 @@ void Game::Draw(const GameTimer& gt)
 	// Because we are on the GPU timeline, the new fence point won't be 
 	// set until the GPU finishes processing all the commands prior to this Signal().
 	mCommandQueue->Signal(mFence.Get(), mCurrentFence);
+	//mStateStack->draw();
 }
 
 void Game::OnMouseDown(WPARAM btnState, int x, int y)
@@ -256,8 +329,19 @@ void Game::UpdateCamera(const GameTimer& gt)
 
 	//XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
 	//XMStoreFloat4x4(&mView, view);
+	mCamera.UpdateViewMatrix();
 
+}
 
+void Game::ResetFrameResources()
+{
+	mFrameResources.clear();
+	BuildFrameResources();
+}
+
+std::vector<std::unique_ptr<RenderItem>>& Game::getAllRenderItems()
+{
+    return mAllRitems;
 }
 
 void Game::AnimateMaterials(const GameTimer& gt)
@@ -368,6 +452,24 @@ void Game::LoadTextures()
 
 	mTextures[BrickTex->Name] = std::move(BrickTex);
 
+	auto TitleTex = std::make_unique<Texture>();
+	TitleTex->Name = "TitleTex";
+	TitleTex->Filename = L"../../Textures/TitleScreen.dds";
+	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),
+		mCommandList.Get(), TitleTex->Filename.c_str(),
+		TitleTex->Resource, TitleTex->UploadHeap));
+
+	mTextures[TitleTex->Name] = std::move(TitleTex);
+
+	auto ButtonTex = std::make_unique<Texture>();
+	ButtonTex->Name = "ButtonTex";
+	ButtonTex->Filename = L"../../Textures/play_hover.dds";
+	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(md3dDevice.Get(),
+		mCommandList.Get(), ButtonTex->Filename.c_str(),
+		ButtonTex->Resource, ButtonTex->UploadHeap));
+
+	mTextures[ButtonTex->Name] = std::move(ButtonTex);
+
 	auto SkyTex = std::make_unique<Texture>();
 	SkyTex->Name = "SkyTex";
 	SkyTex->Filename = L"../../Textures/snowcube1024.dds";
@@ -400,6 +502,7 @@ void Game::LoadTextures()
 
 void Game::ProcessEvents()
 {
+	OutputDebugStringA("PROCESS EVENTS RUNNING\n");
 	CommandQueue& commands = mWorld.getCommandQueue();
 	
 	MSG msg = { 0 };
@@ -407,8 +510,15 @@ void Game::ProcessEvents()
 	// Process all pending Windows messages
 	while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
 	{
+
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
+
+		if (mStateStack)
+		{
+			OutputDebugStringA("Sending event to StateStack\n");
+			mStateStack->handleEvent(msg);
+		}
 
 		// Handle window close
 		if (msg.message == WM_QUIT)
@@ -416,6 +526,7 @@ void Game::ProcessEvents()
 			mWindowRunning = false;
 		}
 
+		
 		// Forward input events to player
 		//mPlayer.handleEvent(msg.message, msg.wParam, commands);
 	}
@@ -475,7 +586,7 @@ void Game::BuildDescriptorHeaps()
 	// Create the SRV heap.
 	//
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 3;
+	srvHeapDesc.NumDescriptors = 5;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(md3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&mSrvDescriptorHeap)));
@@ -486,6 +597,8 @@ void Game::BuildDescriptorHeaps()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE hDescriptor(mSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
 	auto BrickTex = mTextures["BrickTex"]->Resource;
+	auto TitleTex = mTextures["TitleTex"]->Resource;
+	auto ButtonTex = mTextures["ButtonTex"]->Resource;
 	auto StoneTex = mTextures["StoneTex"]->Resource;
 	auto HillTex = mTextures["HillTex"]->Resource;
 
@@ -513,12 +626,18 @@ void Game::BuildDescriptorHeaps()
 
 	md3dDevice->CreateShaderResourceView(BrickTex.Get(), &srvDesc, hDescriptor);
 
-	
+	hDescriptor.Offset(1, mCbvSrvDescriptorSize);
+	srvDesc.Format = TitleTex->GetDesc().Format;
+	md3dDevice->CreateShaderResourceView(TitleTex.Get(), &srvDesc, hDescriptor);
+
+	hDescriptor.Offset(1, mCbvSrvDescriptorSize);
+	srvDesc.Format = ButtonTex->GetDesc().Format;
+	md3dDevice->CreateShaderResourceView(ButtonTex.Get(), &srvDesc, hDescriptor);
+
 	hDescriptor.Offset(1, mCbvSrvDescriptorSize);
 	srvDesc.Format = StoneTex->GetDesc().Format;
 	md3dDevice->CreateShaderResourceView(StoneTex.Get(), &srvDesc, hDescriptor);
 
-	
 	hDescriptor.Offset(1, mCbvSrvDescriptorSize);
 	srvDesc.Format = HillTex->GetDesc().Format;
 	md3dDevice->CreateShaderResourceView(HillTex.Get(), &srvDesc, hDescriptor);
@@ -546,12 +665,17 @@ void Game::BuildShapeGeometry()
 	GeometryGenerator::MeshData grid = geoGen.CreateGrid(460.0f, 460.0f, 50, 50);
 	GeometryGenerator::MeshData sphere = geoGen.CreateSphere(0.5f, 20, 20);
 
+	GeometryGenerator::MeshData quad = geoGen.CreateQuad(-10, 10, 20, 20, 0);
+
 	UINT boxVertexOffset = 0;
 	UINT gridVertexOffset = (UINT)box.Vertices.size();
 	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
+	UINT quadVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
+
 	UINT boxIndexOffset = 0;
 	UINT gridIndexOffset = (UINT)box.Indices32.size();
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
+	UINT quadIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
 
 	SubmeshGeometry boxSubmesh;
 	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
@@ -569,10 +693,16 @@ void Game::BuildShapeGeometry()
 	sphereSubmesh.StartIndexLocation = sphereIndexOffset;
 	sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
 
+	SubmeshGeometry quadSubmesh;
+	quadSubmesh.IndexCount = (UINT)quad.Indices32.size();
+	quadSubmesh.StartIndexLocation = quadIndexOffset;
+	quadSubmesh.BaseVertexLocation = quadVertexOffset;
+
 	auto totalVertexCount =
 		box.Vertices.size() +
 		grid.Vertices.size() +
-		sphere.Vertices.size();
+		sphere.Vertices.size() +
+		quad.Vertices.size();
 
 
 
@@ -620,11 +750,18 @@ void Game::BuildShapeGeometry()
 		vertices[k].TexC = sphere.Vertices[i].TexC;
 	}
 
+	for (size_t i = 0; i < quad.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = quad.Vertices[i].Position;
+		vertices[k].Normal = quad.Vertices[i].Normal;
+		vertices[k].TexC = quad.Vertices[i].TexC;
+	}
+
 	std::vector<std::uint16_t> indices;
 	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
 	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
 	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
-
+	indices.insert(indices.end(), std::begin(quad.GetIndices16()), std::end(quad.GetIndices16()));
 
 	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
@@ -652,6 +789,7 @@ void Game::BuildShapeGeometry()
 	geo->DrawArgs["box"] = boxSubmesh;
 	geo->DrawArgs["grid"] = gridSubmesh;
 	geo->DrawArgs["sphere"] = sphereSubmesh;
+	geo->DrawArgs["quad"] = quadSubmesh;
 
 	mGeometries[geo->Name] = std::move(geo);
 }
@@ -691,10 +829,24 @@ void Game::BuildPSOs()
 
 void Game::BuildFrameResources()
 {
-	for (int i = 0; i < gNumFrameResources; ++i)
+	/*for (int i = 0; i < gNumFrameResources; ++i)
 	{
 		mFrameResources.push_back(std::make_unique<FrameResource>(md3dDevice.Get(),
 			1, (UINT)mAllRitems.size(), (UINT)mMaterials.size()));
+	}*/
+	UINT objectCount = (mAllRitems.size() == 0) ? 1 : (UINT)mAllRitems.size();
+	UINT materialCount = (mMaterials.size() == 0) ? 1 : (UINT)mMaterials.size();
+
+	for (int i = 0; i < gNumFrameResources; ++i)
+	{
+		mFrameResources.push_back(
+			std::make_unique<FrameResource>(
+				md3dDevice.Get(),
+				1,
+				objectCount,
+				materialCount
+			)
+		);
 	}
 }
 
@@ -710,10 +862,30 @@ void Game::BuildMaterials()
 
 	mMaterials["bricks"] = std::move(Eagle);
 
+	auto Title = std::make_unique<Material>();
+	Title->Name = "title";
+	Title->MatCBIndex = 1;
+	Title->DiffuseSrvHeapIndex = 1;
+	Title->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	Title->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	Title->Roughness = 0.2f;
+
+	mMaterials["title"] = std::move(Title);
+
+	auto Button = std::make_unique<Material>();
+	Button->Name = "button";
+	Button->MatCBIndex = 2;
+	Button->DiffuseSrvHeapIndex = 2;
+	Button->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	Button->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	Button->Roughness = 0.2f;
+
+	mMaterials["button"] = std::move(Button);
+
 	auto Raptor = std::make_unique<Material>();
 	Raptor->Name = "stone";
-	Raptor->MatCBIndex = 1;
-	Raptor->DiffuseSrvHeapIndex = 1;
+	Raptor->MatCBIndex = 3;
+	Raptor->DiffuseSrvHeapIndex = 3;
 	Raptor->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	Raptor->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
 	Raptor->Roughness = 0.2f;
@@ -722,8 +894,8 @@ void Game::BuildMaterials()
 
 	auto Desert = std::make_unique<Material>();
 	Desert->Name = "ice";
-	Desert->MatCBIndex = 2;
-	Desert->DiffuseSrvHeapIndex = 2;
+	Desert->MatCBIndex = 4;
+	Desert->DiffuseSrvHeapIndex = 4;
 	Desert->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	Desert->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
 	Desert->Roughness = 0.2f;
@@ -734,8 +906,6 @@ void Game::BuildMaterials()
 
 void Game::BuildRenderItems()
 {
-	mWorld.buildScene();
-
 	// All the render items are opaque.
 	for (auto& e : mAllRitems)
 		mOpaqueRitems.push_back(e.get());
@@ -775,6 +945,7 @@ void Game::DrawRenderItems(ID3D12GraphicsCommandList* cmdList, const std::vector
 
 		cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
+	
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> Game::GetStaticSamplers()
@@ -852,4 +1023,36 @@ XMFLOAT3 Game::GetHillsNormal(float x, float z)const
 	XMStoreFloat3(&n, unitNormal);
 
 	return n;
+}
+
+void Game::WaitForGPU()
+{
+	FlushCommandQueue(); // this exists in D3DApp
+}
+
+void Game::RebuildFrameResources()
+{
+	OutputDebugStringA("REBUILD FRAME RESOURCES\n");
+
+	FlushCommandQueue(); // ensure GPU safe
+
+	mFrameResources.clear();
+	BuildFrameResources();
+
+	mCurrFrameResourceIndex = 0;
+	mCurrFrameResource = mFrameResources[0].get();
+}
+
+void Game::RegisterStates()
+{	
+		mStateStack->registerState<TitleState>(States::Title);
+		//OutputDebugStringA("Registering state : ");
+		mStateStack->registerState<MenuState>(States::Menu);
+		mStateStack->registerState<GameState>(States::Game);
+//		mStateStack->registerState<PauseState>(States::Pause);
+//
+//#pragma region step 8
+//	//mStateStack.registerState<SettingsState>(States::Settings);
+//#pragma endregion
+
 }
